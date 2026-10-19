@@ -2,9 +2,11 @@
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            Console.WriteLine("Hello, World!");
+            TcpProxy myProxy = new TcpProxy(8080, "localhost", 5000);
+
+            await myProxy.StartAsync();
         }
     }
 }
