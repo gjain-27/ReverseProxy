@@ -53,7 +53,7 @@ namespace Proxy
 
                     HttpRequest httpRequest = HttpParser.Parse(Encoding.ASCII.GetString(head.Buffer, 0, head.HeadLength));
 
-                    Console.WriteLine($"Method: {httpRequest.Method}, Path: {httpRequest.Path}, Version: {httpRequest.v}");
+                    Console.WriteLine($"Method: {httpRequest.Method}, Path: {httpRequest.Path}, Version: {httpRequest.Version}");
 
                     using TcpClient backend = new TcpClient();
                     await backend.ConnectAsync(_backendHost, _backendPort);
