@@ -1,18 +1,16 @@
-﻿using System.Net.Sockets;
-
-namespace Proxy
+﻿namespace Proxy
 {
     public class RequestReader
     {
         private const int MaxHeadSize = 8192;
         private static readonly TimeSpan HeadTimeout = TimeSpan.FromSeconds(10);
 
-        private readonly NetworkStream _stream;
+        private readonly Stream _stream;
         private readonly byte[] _buffer = new byte[MaxHeadSize];
         private int _start;
         private int _end;
 
-        public RequestReader(NetworkStream stream)
+        public RequestReader(Stream stream)
         {
             _stream = stream;
         }
@@ -64,6 +62,37 @@ namespace Proxy
             } catch (OperationCanceledException) when (timeout.IsCancellationRequested)
             {
                 throw new TimeoutException($"Timed out after {HeadTimeout.TotalSeconds}s waiting for request head");
+            }
+        }
+
+        public async Task CopyBodyAsync(long length, Stream destination)
+        {
+            long remaining = length;
+
+            int fromBuffer = (int)Math.Min(remaining, _end - _start);
+
+            if (fromBuffer > 0)
+            {
+                await destination.WriteAsync(_buffer.AsMemory(_start, fromBuffer));
+                _start += fromBuffer;
+                remaining -= fromBuffer;
+            }
+
+            while (remaining > 0)
+            {
+                _start = 0;
+                _end = 0;
+
+                int toRead = (int)Math.Min(remaining, _buffer.Length);
+                int bytesRead = await _stream.ReadAsync(_buffer.AsMemory(0, toRead));
+
+                if (bytesRead == 0)
+                {
+                    throw new IOException($"Connection closed with {remaining} of {length} body bytes not received");
+                }
+
+                await destination.WriteAsync(_buffer.AsMemory(0, bytesRead));
+                remaining -= bytesRead;
             }
         }
     }
