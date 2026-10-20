@@ -1,4 +1,6 @@
-﻿namespace Proxy
+﻿using System.Globalization;
+
+namespace Proxy
 {
     public static class HttpParser
     {
@@ -69,6 +71,34 @@
             }
 
             return request;
+        }
+
+        public static long GetBodyLength(HttpRequest request)
+        {
+            bool hasContentLength = request.Headers.TryGetValue("Content-Length", out string? contentLength);
+            bool hasTransferEncoding = request.Headers.ContainsKey("Transfer-Encoding");
+
+            if (hasContentLength && hasTransferEncoding)
+            {
+                throw new FormatException("Request has both Content-Length and Transfer-Encoding");
+            }
+
+            if (hasTransferEncoding)
+            {
+                throw new NotSupportedException("Transfer-Encoding is not supported");
+            }
+
+            if (hasContentLength)
+            {
+                if (!long.TryParse(contentLength, NumberStyles.None, CultureInfo.InvariantCulture, out long length))
+                {
+                    throw new FormatException($"Invalid Content-Length: '{contentLength}'");
+                }
+
+                return length;
+            }
+
+            return 0;
         }
 
         private static void RejectBareLineBreaks(string line)

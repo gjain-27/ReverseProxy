@@ -105,5 +105,58 @@
         {
             Assert.Throws<FormatException>(() => HttpParser.Parse("GET / HTTP/1.1\r\nHost: example.com\nX-Admin: true\r\n\r\n"));
         }
+
+        [Fact]
+        public void GetBodyLength_NoBodyHeaders_ReturnsZero()
+        {
+            var request = HttpParser.Parse("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n");
+
+            Assert.Equal(0, HttpParser.GetBodyLength(request));
+        }
+
+        [Fact]
+        public void GetBodyLength_ContentLength_ReturnsValue()
+        {
+            var request = HttpParser.Parse("POST / HTTP/1.1\r\nContent-Length: 42\r\n\r\n");
+
+            Assert.Equal(42, HttpParser.GetBodyLength(request));
+        }
+
+        [Fact]
+        public void GetBodyLength_ContentLengthZero_ReturnsZero()
+        {
+            var request = HttpParser.Parse("POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n");
+
+            Assert.Equal(0, HttpParser.GetBodyLength(request));
+        }
+
+        [Theory]
+        [InlineData("abc")]
+        [InlineData("-5")]
+        [InlineData("+5")]
+        [InlineData("1.5")]
+        [InlineData("1,000")]
+        public void GetBodyLength_InvalidContentLength_Throws(string value)
+        {
+            var request = HttpParser.Parse($"POST / HTTP/1.1\r\nContent-Length: {value}\r\n\r\n");
+
+            Assert.Throws<FormatException>(() => HttpParser.GetBodyLength(request));
+        }
+
+        [Fact]
+        public void GetBodyLength_BothBodyHeaders_Throws()
+        {
+            var request = HttpParser.Parse("POST / HTTP/1.1\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n");
+
+            Assert.Throws<FormatException>(() => HttpParser.GetBodyLength(request));
+        }
+
+        [Fact]
+        public void GetBodyLength_TransferEncodingOnly_ThrowsNotSupported()
+        {
+            var request = HttpParser.Parse("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n");
+
+            Assert.Throws<NotSupportedException>(() => HttpParser.GetBodyLength(request));
+        }
     }
 }
