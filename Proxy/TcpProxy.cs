@@ -50,20 +50,28 @@ namespace Proxy
                     }
 
                     Backend target = _balancer.Pick();
-                    Console.WriteLine($"Forwarding to {target}");
 
-                    using TcpClient backend = new TcpClient();
-                    await backend.ConnectAsync(target.Host, target.Port);
+                    target.OnConnectionOpened();
+                    try
+                    {
+                        Console.WriteLine($"Forwarding to {target}");
 
-                    NetworkStream backendStream = backend.GetStream();
+                        using TcpClient backend = new TcpClient();
+                        await backend.ConnectAsync(target.Host, target.Port);
 
-                    Task requestTask = ForwardRequestsAsync(reader, head.Value, backendStream);
-                    Task responseTask = backendStream.CopyToAsync(clientStream);
+                        NetworkStream backendStream = backend.GetStream();
 
-                    Task finished = await Task.WhenAny(requestTask, responseTask);
-                    await finished;
+                        Task requestTask = ForwardRequestsAsync(reader, head.Value, backendStream);
+                        Task responseTask = backendStream.CopyToAsync(clientStream);
 
-                    Console.WriteLine("Connection closed");
+                        Task finished = await Task.WhenAny(requestTask, responseTask);
+                        await finished;
+
+                        Console.WriteLine("Connection closed");
+                    } finally
+                    {
+                        target.OnConnectionClosed();
+                    }
                 }
                 catch (Exception e)
                 {

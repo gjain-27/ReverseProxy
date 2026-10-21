@@ -7,7 +7,7 @@ namespace Proxy
         static async Task Main(string[] args)
         {
             List<Backend> backends = [new Backend("localhost", 5001), new Backend("localhost", 5002), new Backend("localhost", 5003)];
-            RoundRobinBalancer balancer = new RoundRobinBalancer(backends);
+            LeastConnectionsBalancer balancer = new LeastConnectionsBalancer(backends);
             TcpProxy myProxy = new TcpProxy(8080, balancer);
 
             await myProxy.StartAsync();
