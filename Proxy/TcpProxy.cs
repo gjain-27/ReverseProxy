@@ -10,6 +10,9 @@ namespace Proxy
         private readonly int _listenPort;
         private readonly ILoadBalancer _balancer;
 
+        private const int MaxConnectAttempts = 3;
+        private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(2);
+
         public TcpProxy(int listenPort, ILoadBalancer balancer)
         {
             _listenPort = listenPort;
@@ -49,15 +52,21 @@ namespace Proxy
                         return;
                     }
 
-                    Backend target = _balancer.Pick();
+                    var connection = await ConnectToBackendAsync();
+                    if (connection == null)
+                    {
+                        Console.WriteLine("No healthy backends");
+                        await WriteErrorResponseAsync(clientStream, 503, "Service Unavailable", "No healthy backends");
+                        return;
+                    }
+
+                    Backend target = connection.Value.Target;
+                    using TcpClient backend = connection.Value.Client;
 
                     target.OnConnectionOpened();
                     try
                     {
                         Console.WriteLine($"Forwarding to {target}");
-
-                        using TcpClient backend = new TcpClient();
-                        await backend.ConnectAsync(target.Host, target.Port);
 
                         NetworkStream backendStream = backend.GetStream();
 
@@ -80,6 +89,34 @@ namespace Proxy
             }
         }
 
+        private async Task<(Backend Target, TcpClient Client)?> ConnectToBackendAsync()
+        {
+            for (int attempt = 0; attempt < MaxConnectAttempts; attempt++)
+            {
+                Backend? target = _balancer.Pick();
+                if (target == null)
+                {
+                    return null;
+                }
+
+                TcpClient client = new TcpClient();
+                try
+                {
+                    using CancellationTokenSource timeout = new CancellationTokenSource(ConnectTimeout);
+                    await client.ConnectAsync(target.Host, target.Port, timeout.Token);
+                    return (target, client);
+                }
+                catch (Exception e) when (e is SocketException || e is OperationCanceledException)
+                {
+                    client.Dispose();
+                    Console.WriteLine($"Could not connect to {target}: {e.Message}");
+                    target.MarkUnhealthy();
+                }
+            }
+
+            return null;
+        }
+
         private async Task ForwardRequestsAsync(RequestReader reader, ReadOnlyMemory<byte> firstHead, Stream backendStream)
         {
             ReadOnlyMemory<byte>? head = firstHead;
@@ -96,6 +133,21 @@ namespace Proxy
 
                 head = await reader.ReadHeadAsync();
             }
+        }
+
+        private static async Task WriteErrorResponseAsync(Stream stream, int statusCode, string reason, string message)
+        {
+            byte[] body = Encoding.ASCII.GetBytes(message);
+
+            string head =
+                $"HTTP/1.1 {statusCode} {reason}\r\n" +
+                "Content-Type: text/plain\r\n" +
+                $"Content-Length: {body.Length}\r\n" +
+                "Connection: close\r\n" +
+                "\r\n";
+
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(head));
+            await stream.WriteAsync(body);
         }
     }
 }

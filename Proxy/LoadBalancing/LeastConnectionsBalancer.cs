@@ -6,16 +6,21 @@
         {
         }
 
-        public override Backend Pick()
+        public override Backend? Pick()
         {
             int start = NextIndex();
-            Backend best = Backends[start];
+            Backend? best = null;
 
-            for (int i = 1; i < Backends.Length; i++)
+            for (int i = 0; i < Backends.Length; i++)
             {
                 Backend candidate = Backends[(start + i) % Backends.Length];
 
-                if (candidate.ActiveConnections < best.ActiveConnections)
+                if (!candidate.IsHealthy) 
+                {
+                    continue;
+                }
+
+                if (best == null || candidate.ActiveConnections < best.ActiveConnections)
                 {
                     best = candidate;
                 }

@@ -2,6 +2,6 @@
 {
     public interface ILoadBalancer
     {
-        Backend Pick();
+        Backend? Pick();
     }
 }

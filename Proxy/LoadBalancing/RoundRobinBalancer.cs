@@ -6,6 +6,20 @@
         {
         }
 
-        public override Backend Pick() => Backends[NextIndex()];
+        public override Backend? Pick()
+        {
+            int start = NextIndex();
+
+            for (int i = 0; i < Backends.Length; i++)
+            {
+                int position = (start + i) % Backends.Length;
+                if (Backends[position].IsHealthy)
+                {
+                    return Backends[position];
+                }
+            }
+
+            return null;
+        }
     }
 }

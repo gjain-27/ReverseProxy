@@ -21,6 +21,6 @@
             return (int)(next % Backends.Length);
         }
 
-        public abstract Backend Pick();
+        public abstract Backend? Pick();
     }
 }

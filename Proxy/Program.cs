@@ -10,6 +10,9 @@ namespace Proxy
             LeastConnectionsBalancer balancer = new LeastConnectionsBalancer(backends);
             TcpProxy myProxy = new TcpProxy(8080, balancer);
 
+            HealthChecker checker = new HealthChecker(backends, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(2));
+            _ = checker.RunAsync();
+
             await myProxy.StartAsync();
         }
     }
