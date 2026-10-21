@@ -56,7 +56,6 @@ namespace Proxy
                     if (connection == null)
                     {
                         Console.WriteLine("No healthy backends");
-                        await WriteErrorResponseAsync(clientStream, 503, "Service Unavailable", "No healthy backends");
                         return;
                     }
 
@@ -133,21 +132,6 @@ namespace Proxy
 
                 head = await reader.ReadHeadAsync();
             }
-        }
-
-        private static async Task WriteErrorResponseAsync(Stream stream, int statusCode, string reason, string message)
-        {
-            byte[] body = Encoding.ASCII.GetBytes(message);
-
-            string head =
-                $"HTTP/1.1 {statusCode} {reason}\r\n" +
-                "Content-Type: text/plain\r\n" +
-                $"Content-Length: {body.Length}\r\n" +
-                "Connection: close\r\n" +
-                "\r\n";
-
-            await stream.WriteAsync(Encoding.ASCII.GetBytes(head));
-            await stream.WriteAsync(body);
         }
     }
 }

@@ -35,5 +35,13 @@
 
             return false;
         }
+
+        public bool IsIdle(TimeSpan idleTime)
+        {
+            lock (_sync)
+            {
+                return _time.GetElapsedTime(_lastRefill) >= idleTime;
+            }
+        }
     }
 }
