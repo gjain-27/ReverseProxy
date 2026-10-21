@@ -1,4 +1,5 @@
 ﻿using Proxy.LoadBalancing;
+using Proxy.RateLimiting;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -9,19 +10,21 @@ namespace Proxy
     {
         private readonly int _listenPort;
         private readonly ILoadBalancer _balancer;
+        private readonly RateLimiter _rateLimiter;
 
         private const int MaxConnectAttempts = 3;
         private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(2);
 
-        public TcpProxy(int listenPort, ILoadBalancer balancer)
+        public TcpProxy(int listenPort, ILoadBalancer balancer, RateLimiter rateLimiter)
         {
             _listenPort = listenPort;
             _balancer = balancer;
+            _rateLimiter = rateLimiter;
         }
 
         public async Task StartAsync()
         {
-            TcpListener listener = new TcpListener(IPAddress.Any, _listenPort);
+            TcpListener listener = TcpListener.Create(_listenPort);
 
             listener.Start();
 
@@ -43,6 +46,7 @@ namespace Proxy
                     Console.WriteLine("Client connected");
 
                     NetworkStream clientStream = client.GetStream();
+                    IPAddress clientIp = ((IPEndPoint)client.Client.RemoteEndPoint!).Address;
 
                     RequestReader reader = new RequestReader(clientStream);
 
@@ -52,10 +56,18 @@ namespace Proxy
                         return;
                     }
 
+                    if (!_rateLimiter.TryAcquire(clientIp))
+                    {
+                        Console.WriteLine($"Rate limited {clientIp}");
+                        await WriteErrorResponseAsync(clientStream, 429, "Too Many Requests", "Rate limit exceeded");
+                        return;
+                    }
+
                     var connection = await ConnectToBackendAsync();
                     if (connection == null)
                     {
                         Console.WriteLine("No healthy backends");
+                        await WriteErrorResponseAsync(clientStream, 503, "Service Unavailable", "No healthy backends");
                         return;
                     }
 
@@ -69,7 +81,7 @@ namespace Proxy
 
                         NetworkStream backendStream = backend.GetStream();
 
-                        Task requestTask = ForwardRequestsAsync(reader, head.Value, backendStream);
+                        Task requestTask = ForwardRequestsAsync(reader, head.Value, backendStream, clientIp);
                         Task responseTask = backendStream.CopyToAsync(clientStream);
 
                         Task finished = await Task.WhenAny(requestTask, responseTask);
@@ -116,7 +128,7 @@ namespace Proxy
             return null;
         }
 
-        private async Task ForwardRequestsAsync(RequestReader reader, ReadOnlyMemory<byte> firstHead, Stream backendStream)
+        private async Task ForwardRequestsAsync(RequestReader reader, ReadOnlyMemory<byte> firstHead, Stream backendStream, IPAddress clientIp)
         {
             ReadOnlyMemory<byte>? head = firstHead;
 
@@ -131,7 +143,30 @@ namespace Proxy
                 await reader.CopyBodyAsync(bodyLength, backendStream);
 
                 head = await reader.ReadHeadAsync();
+
+                if (head != null)
+                {
+                    while (!_rateLimiter.TryAcquire(clientIp))
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(50));
+                    }
+                }
             }
+        }
+
+        private static async Task WriteErrorResponseAsync(Stream stream, int statusCode, string reason, string message)
+        {
+            byte[] body = Encoding.ASCII.GetBytes(message);
+
+            string head =
+                $"HTTP/1.1 {statusCode} {reason}\r\n" +
+                "Content-Type: text/plain\r\n" +
+                $"Content-Length: {body.Length}\r\n" +
+                "Connection: close\r\n" +
+                "\r\n";
+
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(head));
+            await stream.WriteAsync(body);
         }
     }
 }
