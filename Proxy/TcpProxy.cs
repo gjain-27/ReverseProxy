@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using Proxy.LoadBalancing;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
@@ -7,14 +8,12 @@ namespace Proxy
     public class TcpProxy
     {
         private readonly int _listenPort;
-        private readonly string _backendHost;
-        private readonly int _backendPort;
+        private readonly ILoadBalancer _balancer;
 
-        public TcpProxy(int listenPort, string backendHost, int backendPort)
+        public TcpProxy(int listenPort, ILoadBalancer balancer)
         {
             _listenPort = listenPort;
-            _backendHost = backendHost;
-            _backendPort = backendPort;
+            _balancer = balancer;
         }
 
         public async Task StartAsync()
@@ -44,12 +43,21 @@ namespace Proxy
 
                     RequestReader reader = new RequestReader(clientStream);
 
+                    ReadOnlyMemory<byte>? head = await reader.ReadHeadAsync();
+                    if (head == null)
+                    {
+                        return;
+                    }
+
+                    Backend target = _balancer.Pick();
+                    Console.WriteLine($"Forwarding to {target}");
+
                     using TcpClient backend = new TcpClient();
-                    await backend.ConnectAsync(_backendHost, _backendPort);
+                    await backend.ConnectAsync(target.Host, target.Port);
 
                     NetworkStream backendStream = backend.GetStream();
 
-                    Task requestTask = ForwardRequestsAsync(reader, backendStream);
+                    Task requestTask = ForwardRequestsAsync(reader, head.Value, backendStream);
                     Task responseTask = backendStream.CopyToAsync(clientStream);
 
                     Task finished = await Task.WhenAny(requestTask, responseTask);
@@ -64,17 +72,12 @@ namespace Proxy
             }
         }
 
-        private async Task ForwardRequestsAsync(RequestReader reader, Stream backendStream)
+        private async Task ForwardRequestsAsync(RequestReader reader, ReadOnlyMemory<byte> firstHead, Stream backendStream)
         {
-            while (true)
+            ReadOnlyMemory<byte>? head = firstHead;
+
+            while (head != null)
             {
-                ReadOnlyMemory<byte>? head = await reader.ReadHeadAsync();
-
-                if (head == null)
-                {
-                    return;
-                }
-
                 HttpRequest request = HttpParser.Parse(Encoding.ASCII.GetString(head.Value.Span));
 
                 Console.WriteLine($"Method: {request.Method}, Path: {request.Path}, Version: {request.Version}");
@@ -82,6 +85,8 @@ namespace Proxy
                 long bodyLength = HttpParser.GetBodyLength(request);
                 await backendStream.WriteAsync(head.Value);
                 await reader.CopyBodyAsync(bodyLength, backendStream);
+
+                head = await reader.ReadHeadAsync();
             }
         }
     }
