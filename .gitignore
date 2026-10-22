@@ -364,3 +364,4 @@ FodyWeavers.xsd
 
 # Claude Code project notes (local only)
 CLAUDE.md
+.env

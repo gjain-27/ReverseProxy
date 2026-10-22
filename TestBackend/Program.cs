@@ -12,6 +12,9 @@
 
             app.MapGet("/", () => $"Hello from backend on port {port}");
 
+            app.MapGet("/headers", (HttpRequest request) =>
+                $"X-Forwarded-For: {request.Headers["X-Forwarded-For"]}\nX-Forwarded-Proto: {request.Headers["X-Forwarded-Proto"]}\n");
+
             app.MapPost("/echo", async (HttpRequest request) =>
             {
                 using var reader = new StreamReader(request.Body);

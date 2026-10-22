@@ -1,7 +1,9 @@
 ﻿using Proxy.LoadBalancing;
 using Proxy.RateLimiting;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 namespace Proxy
@@ -11,15 +13,18 @@ namespace Proxy
         private readonly int _listenPort;
         private readonly ILoadBalancer _balancer;
         private readonly RateLimiter _rateLimiter;
+        private readonly X509Certificate2? _certificate;
 
         private const int MaxConnectAttempts = 3;
         private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(10);
 
-        public TcpProxy(int listenPort, ILoadBalancer balancer, RateLimiter rateLimiter)
+        public TcpProxy(int listenPort, ILoadBalancer balancer, RateLimiter rateLimiter, X509Certificate2? certificate = null)
         {
             _listenPort = listenPort;
             _balancer = balancer;
             _rateLimiter = rateLimiter;
+            _certificate = certificate;
         }
 
         public async Task StartAsync()
@@ -45,7 +50,7 @@ namespace Proxy
                 {
                     Console.WriteLine("Client connected");
 
-                    NetworkStream clientStream = client.GetStream();
+                    using Stream clientStream = await OpenClientStreamAsync(client);
                     IPAddress clientIp = ((IPEndPoint)client.Client.RemoteEndPoint!).Address;
 
                     RequestReader reader = new RequestReader(clientStream);
@@ -100,6 +105,29 @@ namespace Proxy
             }
         }
 
+        private async Task<Stream> OpenClientStreamAsync(TcpClient client)
+        {
+            NetworkStream networkStream = client.GetStream();
+
+            if (_certificate == null)
+            {
+                return networkStream;
+            }
+
+            SslStream ssl = new SslStream(networkStream);
+            try
+            {
+                using CancellationTokenSource timeout = new CancellationTokenSource(HandshakeTimeout);
+                await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = _certificate }, timeout.Token);
+                return ssl;
+            }
+            catch
+            {
+                ssl.Dispose();
+                throw;
+            }
+        }
+
         private async Task<(Backend Target, TcpClient Client)?> ConnectToBackendAsync()
         {
             for (int attempt = 0; attempt < MaxConnectAttempts; attempt++)
@@ -134,12 +162,14 @@ namespace Proxy
 
             while (head != null)
             {
-                HttpRequest request = HttpParser.Parse(Encoding.ASCII.GetString(head.Value.Span));
+                string headText = Encoding.ASCII.GetString(head.Value.Span);
+                HttpRequest request = HttpParser.Parse(headText);
 
                 Console.WriteLine($"Method: {request.Method}, Path: {request.Path}, Version: {request.Version}");
 
                 long bodyLength = HttpParser.GetBodyLength(request);
-                await backendStream.WriteAsync(head.Value);
+                byte[] forwardedHead = ForwardedHeaders.Rewrite(headText, clientIp, _certificate == null ? "http" : "https");
+                await backendStream.WriteAsync(forwardedHead);
                 await reader.CopyBodyAsync(bodyLength, backendStream);
 
                 head = await reader.ReadHeadAsync();
