@@ -7,21 +7,26 @@ namespace Proxy
     {
         private const int MaxHeadSize = 8192;
         private const int MaxLineSize = 1024;
-        private static readonly TimeSpan HeadTimeout = TimeSpan.FromSeconds(10);
 
         private readonly Stream _stream;
+        private readonly TimeSpan _headTimeout;
         private readonly byte[] _buffer = new byte[MaxHeadSize];
         private int _start;
         private int _end;
 
-        public HttpReader(Stream stream)
+        public HttpReader(Stream stream) : this(stream, TimeSpan.FromSeconds(10))
+        {
+        }
+
+        public HttpReader(Stream stream, TimeSpan headTimeout)
         {
             _stream = stream;
+            _headTimeout = headTimeout;
         }
 
         public async Task<ReadOnlyMemory<byte>?> ReadHeadAsync()
         {
-            using CancellationTokenSource timeout = new CancellationTokenSource(HeadTimeout);
+            using CancellationTokenSource timeout = new CancellationTokenSource(_headTimeout);
 
             try
             {
@@ -65,7 +70,7 @@ namespace Proxy
                 }
             } catch (OperationCanceledException) when (timeout.IsCancellationRequested)
             {
-                throw new TimeoutException($"Timed out after {HeadTimeout.TotalSeconds}s waiting for request head");
+                throw new TimeoutException($"Timed out after {_headTimeout.TotalSeconds}s waiting for request head");
             }
         }
 
@@ -102,7 +107,7 @@ namespace Proxy
 
         public async Task<ReadOnlyMemory<byte>> ReadLineAsync()
         {
-            using CancellationTokenSource timeout = new CancellationTokenSource(HeadTimeout);
+            using CancellationTokenSource timeout = new CancellationTokenSource(_headTimeout);
 
             try
             {
@@ -142,7 +147,7 @@ namespace Proxy
                 }
             } catch (OperationCanceledException) when (timeout.IsCancellationRequested)
             {
-                throw new TimeoutException($"Timed out after {HeadTimeout.TotalSeconds}s waiting for a line");
+                throw new TimeoutException($"Timed out after {_headTimeout.TotalSeconds}s waiting for a line");
             }
         }
 

@@ -5,6 +5,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Threading.Channels;
 
 namespace Proxy
 {
@@ -85,9 +86,11 @@ namespace Proxy
                         Console.WriteLine($"Forwarding to {target}");
 
                         NetworkStream backendStream = backend.GetStream();
+                        Channel<ExpectedResponse> pending = Channel.CreateUnbounded<ExpectedResponse>();
+                        HttpReader backendReader = new HttpReader(backendStream, TimeSpan.FromSeconds(60));
 
-                        Task requestTask = ForwardRequestsAsync(reader, head.Value, backendStream, clientIp);
-                        Task responseTask = backendStream.CopyToAsync(clientStream);
+                        Task requestTask = ForwardRequestsAsync(reader, head.Value, backendStream, clientIp, pending.Writer);
+                        Task responseTask = ResponseForwarder.ForwardAsync(backendReader, pending.Reader, clientStream);
 
                         Task finished = await Task.WhenAny(requestTask, responseTask);
                         await finished;
@@ -156,31 +159,39 @@ namespace Proxy
             return null;
         }
 
-        private async Task ForwardRequestsAsync(HttpReader reader, ReadOnlyMemory<byte> firstHead, Stream backendStream, IPAddress clientIp)
+        private async Task ForwardRequestsAsync(HttpReader reader, ReadOnlyMemory<byte> firstHead, Stream backendStream, IPAddress clientIp, ChannelWriter<ExpectedResponse> pending)
         {
-            ReadOnlyMemory<byte>? head = firstHead;
-
-            while (head != null)
+            try
             {
-                string headText = Encoding.ASCII.GetString(head.Value.Span);
-                HttpRequest request = HttpParser.Parse(headText);
+                ReadOnlyMemory<byte>? head = firstHead;
 
-                Console.WriteLine($"Method: {request.Method}, Path: {request.Path}, Version: {request.Version}");
-
-                long bodyLength = HttpParser.GetBodyLength(request);
-                byte[] forwardedHead = ForwardedHeaders.Rewrite(headText, clientIp, _certificate == null ? "http" : "https");
-                await backendStream.WriteAsync(forwardedHead);
-                await reader.CopyBodyAsync(bodyLength, backendStream);
-
-                head = await reader.ReadHeadAsync();
-
-                if (head != null)
+                while (head != null)
                 {
-                    while (!_rateLimiter.TryAcquire(clientIp))
+                    string headText = Encoding.ASCII.GetString(head.Value.Span);
+                    HttpRequest request = HttpParser.Parse(headText);
+
+                    Console.WriteLine($"Method: {request.Method}, Path: {request.Path}, Version: {request.Version}");
+
+                    long bodyLength = HttpParser.GetBodyLength(request);
+                    byte[] forwardedHead = ForwardedHeaders.Rewrite(headText, clientIp, _certificate == null ? "http" : "https");
+                    pending.TryWrite(new ExpectedResponse(request.Method));
+                    await backendStream.WriteAsync(forwardedHead);
+                    await reader.CopyBodyAsync(bodyLength, backendStream);
+
+                    head = await reader.ReadHeadAsync();
+
+                    if (head != null)
                     {
-                        await Task.Delay(TimeSpan.FromMilliseconds(50));
+                        while (!_rateLimiter.TryAcquire(clientIp))
+                        {
+                            await Task.Delay(TimeSpan.FromMilliseconds(50));
+                        }
                     }
                 }
+            }
+            finally
+            {
+                pending.TryComplete();
             }
         }
 
