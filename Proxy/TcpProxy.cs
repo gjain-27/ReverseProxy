@@ -53,7 +53,7 @@ namespace Proxy
                     using Stream clientStream = await OpenClientStreamAsync(client);
                     IPAddress clientIp = ((IPEndPoint)client.Client.RemoteEndPoint!).Address;
 
-                    RequestReader reader = new RequestReader(clientStream);
+                    HttpReader reader = new HttpReader(clientStream);
 
                     ReadOnlyMemory<byte>? head = await reader.ReadHeadAsync();
                     if (head == null)
@@ -156,7 +156,7 @@ namespace Proxy
             return null;
         }
 
-        private async Task ForwardRequestsAsync(RequestReader reader, ReadOnlyMemory<byte> firstHead, Stream backendStream, IPAddress clientIp)
+        private async Task ForwardRequestsAsync(HttpReader reader, ReadOnlyMemory<byte> firstHead, Stream backendStream, IPAddress clientIp)
         {
             ReadOnlyMemory<byte>? head = firstHead;
 
