@@ -158,5 +158,67 @@
 
             Assert.Throws<NotSupportedException>(() => HttpParser.GetBodyLength(request));
         }
+
+        [Fact]
+        public void ParseResponse_SimpleOk_ReadsStatusLine()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 200 OK");
+
+            Assert.Equal("HTTP/1.1", response.Version);
+            Assert.Equal(200, response.StatusCode);
+            Assert.Equal("OK", response.Reason);
+        }
+
+        [Fact]
+        public void ParseResponse_MultiWordReason_KeepsWholeReason()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 503 Service Unavailable");
+
+            Assert.Equal(503, response.StatusCode);
+            Assert.Equal("Service Unavailable", response.Reason);
+        }
+
+        [Fact]
+        public void ParseResponse_NoReason_ReasonIsEmpty()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 204");
+
+            Assert.Equal(204, response.StatusCode);
+            Assert.Equal("", response.Reason);
+        }
+
+        [Fact]
+        public void ParseResponse_Headers_AreParsedCaseInsensitively()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\n");
+
+            Assert.Equal(2, response.Headers.Count);
+            Assert.Equal("text/plain", response.Headers["content-type"]);
+            Assert.Equal("5", response.Headers["CONTENT-LENGTH"]);
+        }
+
+        [Theory]
+        [InlineData("abc")]
+        [InlineData("99")]
+        [InlineData("1000")]
+        [InlineData("600")]
+        [InlineData("-12")]
+        [InlineData("+20")]
+        public void ParseResponse_InvalidStatusCode_Throws(string code)
+        {
+            Assert.Throws<FormatException>(() => HttpParser.ParseResponse($"HTTP/1.1 {code} OK"));
+        }
+
+        [Fact]
+        public void ParseResponse_InvalidVersion_Throws()
+        {
+            Assert.Throws<FormatException>(() => HttpParser.ParseResponse("HTTPS/1.1 200 OK"));
+        }
+
+        [Fact]
+        public void ParseResponse_ConflictingContentLength_Throws()
+        {
+            Assert.Throws<FormatException>(() => HttpParser.ParseResponse("HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\n"));
+        }
     }
 }

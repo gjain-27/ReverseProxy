@@ -26,51 +26,44 @@ namespace Proxy
             request.Path = requestLine[1];
             request.Version = requestLine[2];
 
-            for (int i = 1; i < lines.Length; i++)
-            {
-                string line = lines[i];
-                if (line.Length == 0)
-                {
-                    break;
-                }
-
-                RejectBareLineBreaks(line);
-
-                int colon = line.IndexOf(':');
-                if (colon <= 0)
-                {
-                    throw new FormatException($"Malformed header line: '{line}'");
-                }
-
-                string name = line.Substring(0, colon);
-                if (name.Any(char.IsWhiteSpace))
-                {
-                    throw new FormatException($"Whitespace in header name: '{name}'");
-                }
-
-                string value = line.Substring(colon + 1).Trim();
-
-                if (request.Headers.TryGetValue(name, out string? existing))
-                {
-                    if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (existing != value)
-                        {
-                            throw new FormatException($"Conflicting Content-Length values: '{existing}' and '{value}'");
-                        }
-                    }
-                    else
-                    {
-                        request.Headers[name] = existing + ", " + value;
-                    }
-                }
-                else
-                {
-                    request.Headers[name] = value;
-                }
-            }
+            ParseHeaders(lines, request.Headers);
 
             return request;
+        }
+
+        public static HttpResponse ParseResponse(string head)
+        {
+            HttpResponse response = new HttpResponse();
+
+            string[] lines = head.Split("\r\n");
+
+            RejectBareLineBreaks(lines[0]);
+
+            string[] statusLine = lines[0].Split(' ', 3);
+            if (statusLine.Length < 2 || statusLine.Length > 3)
+            {
+                throw new FormatException($"Malformed status line: '{lines[0]}'");
+            }
+            if (!statusLine[0].StartsWith("HTTP/", StringComparison.Ordinal))
+            {
+                throw new FormatException($"Invalid HTTP version: '{statusLine[0]}'");
+            }
+
+            string code = statusLine[1];
+            if (code.Length != 3
+                || !int.TryParse(code, NumberStyles.None, CultureInfo.InvariantCulture, out int statusCode)
+                || statusCode < 100 || statusCode > 599)
+            {
+                throw new FormatException($"Invalid status code: '{code}'");
+            }
+
+            response.Version = statusLine[0];
+            response.StatusCode = statusCode;
+            response.Reason = statusLine.Length == 3 ? statusLine[2] : "";
+
+            ParseHeaders(lines, response.Headers);
+
+            return response;
         }
 
         public static long GetBodyLength(HttpRequest request)
@@ -99,6 +92,53 @@ namespace Proxy
             }
 
             return 0;
+        }
+
+        private static void ParseHeaders(string[] lines, Dictionary<string, string> headers)
+        {
+            for (int i = 1; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                if (line.Length == 0)
+                {
+                    break;
+                }
+
+                RejectBareLineBreaks(line);
+
+                int colon = line.IndexOf(':');
+                if (colon <= 0)
+                {
+                    throw new FormatException($"Malformed header line: '{line}'");
+                }
+
+                string name = line.Substring(0, colon);
+                if (name.Any(char.IsWhiteSpace))
+                {
+                    throw new FormatException($"Whitespace in header name: '{name}'");
+                }
+
+                string value = line.Substring(colon + 1).Trim();
+
+                if (headers.TryGetValue(name, out string? existing))
+                {
+                    if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (existing != value)
+                        {
+                            throw new FormatException($"Conflicting Content-Length values: '{existing}' and '{value}'");
+                        }
+                    }
+                    else
+                    {
+                        headers[name] = existing + ", " + value;
+                    }
+                }
+                else
+                {
+                    headers[name] = value;
+                }
+            }
         }
 
         private static void RejectBareLineBreaks(string line)
