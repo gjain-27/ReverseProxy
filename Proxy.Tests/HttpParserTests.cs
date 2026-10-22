@@ -220,5 +220,64 @@
         {
             Assert.Throws<FormatException>(() => HttpParser.ParseResponse("HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\n"));
         }
+
+        [Fact]
+        public void GetResponseBody_HeadRequest_HasNoBody()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n");
+
+            Assert.Equal((BodyKind.None, 0L), HttpParser.GetResponseBody("HEAD", response));
+        }
+
+        [Theory]
+        [InlineData(101)]
+        [InlineData(204)]
+        [InlineData(304)]
+        public void GetResponseBody_NoBodyStatus_HasNoBody(int status)
+        {
+            var response = HttpParser.ParseResponse($"HTTP/1.1 {status} Status\r\nContent-Length: 10\r\n\r\n");
+
+            Assert.Equal((BodyKind.None, 0L), HttpParser.GetResponseBody("GET", response));
+        }
+
+        [Fact]
+        public void GetResponseBody_Chunked_ReturnsChunked()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+
+            Assert.Equal((BodyKind.Chunked, 0L), HttpParser.GetResponseBody("GET", response));
+        }
+
+        [Fact]
+        public void GetResponseBody_ChunkedAndContentLength_ChunkedWins()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 200 OK\r\nContent-Length: 42\r\nTransfer-Encoding: chunked\r\n\r\n");
+
+            Assert.Equal((BodyKind.Chunked, 0L), HttpParser.GetResponseBody("GET", response));
+        }
+
+        [Fact]
+        public void GetResponseBody_ContentLength_ReturnsLength()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 200 OK\r\nContent-Length: 42\r\n\r\n");
+
+            Assert.Equal((BodyKind.ContentLength, 42L), HttpParser.GetResponseBody("GET", response));
+        }
+
+        [Fact]
+        public void GetResponseBody_NoLengthHeaders_UntilClose()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n");
+
+            Assert.Equal((BodyKind.UntilClose, 0L), HttpParser.GetResponseBody("GET", response));
+        }
+
+        [Fact]
+        public void GetResponseBody_InvalidContentLength_Throws()
+        {
+            var response = HttpParser.ParseResponse("HTTP/1.1 200 OK\r\nContent-Length: abc\r\n\r\n");
+
+            Assert.Throws<FormatException>(() => HttpParser.GetResponseBody("GET", response));
+        }
     }
 }

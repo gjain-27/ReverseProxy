@@ -50,9 +50,7 @@ namespace Proxy
             }
 
             string code = statusLine[1];
-            if (code.Length != 3
-                || !int.TryParse(code, NumberStyles.None, CultureInfo.InvariantCulture, out int statusCode)
-                || statusCode < 100 || statusCode > 599)
+            if (code.Length != 3 || !int.TryParse(code, NumberStyles.None, CultureInfo.InvariantCulture, out int statusCode) || statusCode < 100 || statusCode > 599)
             {
                 throw new FormatException($"Invalid status code: '{code}'");
             }
@@ -83,15 +81,47 @@ namespace Proxy
 
             if (hasContentLength)
             {
-                if (!long.TryParse(contentLength, NumberStyles.None, CultureInfo.InvariantCulture, out long length))
-                {
-                    throw new FormatException($"Invalid Content-Length: '{contentLength}'");
-                }
-
-                return length;
+                return ParseContentLength(contentLength!);
             }
 
             return 0;
+        }
+
+        public static (BodyKind Kind, long Length) GetResponseBody(string requestMethod, HttpResponse response)
+        {
+            if (requestMethod.Equals("HEAD", StringComparison.Ordinal))
+            {
+                return (BodyKind.None, 0);
+            }
+
+            int status = response.StatusCode;
+            if ((status >= 100 && status <= 199) || status == 204 || status == 304)
+            {
+                return (BodyKind.None, 0);
+            }
+
+            if (response.Headers.TryGetValue("Transfer-Encoding", out string? transferEncoding)
+                && transferEncoding.Contains("chunked", StringComparison.OrdinalIgnoreCase))
+            {
+                return (BodyKind.Chunked, 0);
+            }
+
+            if (response.Headers.TryGetValue("Content-Length", out string? contentLength))
+            {
+                return (BodyKind.ContentLength, ParseContentLength(contentLength));
+            }
+
+            return (BodyKind.UntilClose, 0);
+        }
+
+        private static long ParseContentLength(string value)
+        {
+            if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long length))
+            {
+                throw new FormatException($"Invalid Content-Length: '{value}'");
+            }
+
+            return length;
         }
 
         private static void ParseHeaders(string[] lines, Dictionary<string, string> headers)
