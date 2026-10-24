@@ -37,7 +37,7 @@ namespace Proxy
 
             listener.Start();
 
-            Console.WriteLine($"Listening on port {_listenPort}");
+            Log.Info($"Listening on port {_listenPort}");
 
             while (true)
             {
@@ -52,7 +52,7 @@ namespace Proxy
             {
                 try
                 {
-                    Console.WriteLine("Client connected");
+                    Log.Request("Client connected");
 
                     using Stream clientStream = await OpenClientStreamAsync(client);
                     IPAddress clientIp = ((IPEndPoint)client.Client.RemoteEndPoint!).Address;
@@ -67,7 +67,7 @@ namespace Proxy
 
                     if (!_rateLimiter.TryAcquire(clientIp))
                     {
-                        Console.WriteLine($"Rate limited {clientIp}");
+                        Log.Info($"Rate limited {clientIp}");
                         await WriteErrorResponseAsync(clientStream, 429, "Too Many Requests", "Rate limit exceeded");
                         return;
                     }
@@ -75,7 +75,7 @@ namespace Proxy
                     var connection = await ConnectToBackendAsync();
                     if (connection == null)
                     {
-                        Console.WriteLine("No healthy backends");
+                        Log.Info("No healthy backends");
                         await WriteErrorResponseAsync(clientStream, 503, "Service Unavailable", "No healthy backends");
                         return;
                     }
@@ -86,7 +86,7 @@ namespace Proxy
                     target.OnConnectionOpened();
                     try
                     {
-                        Console.WriteLine($"Forwarding to {target}");
+                        Log.Request($"Forwarding to {target}");
 
                         NetworkStream backendStream = backend.GetStream();
                         Channel<ExpectedResponse> pending = Channel.CreateUnbounded<ExpectedResponse>();
@@ -98,7 +98,7 @@ namespace Proxy
                         Task finished = await Task.WhenAny(requestTask, responseTask);
                         await finished;
 
-                        Console.WriteLine("Connection closed");
+                        Log.Request("Connection closed");
                     } finally
                     {
                         target.OnConnectionClosed();
@@ -106,7 +106,7 @@ namespace Proxy
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"Connection error: {e.Message}");
+                    Log.Info($"Connection error: {e.Message}");
                 }
             }
         }
@@ -154,7 +154,7 @@ namespace Proxy
                 catch (Exception e) when (e is SocketException || e is OperationCanceledException)
                 {
                     client.Dispose();
-                    Console.WriteLine($"Could not connect to {target}: {e.Message}");
+                    Log.Info($"Could not connect to {target}: {e.Message}");
                     target.MarkUnhealthy();
                 }
             }
@@ -173,14 +173,14 @@ namespace Proxy
                     string headText = Encoding.ASCII.GetString(head.Value.Span);
                     HttpRequest request = HttpParser.Parse(headText);
 
-                    Console.WriteLine($"Method: {request.Method}, Path: {request.Path}, Version: {request.Version}");
+                    Log.Request($"Method: {request.Method}, Path: {request.Path}, Version: {request.Version}");
 
                     long bodyLength = HttpParser.GetBodyLength(request);
                     string? cacheKey = CachePolicy.GetCacheKey(request);
 
                     if (cacheKey != null && _cache.TryGet(cacheKey, out CachedResponse? cached))
                     {
-                        Console.WriteLine($"Cache HIT {cacheKey}");
+                        Log.Request($"Cache HIT {cacheKey}");
                         await reader.CopyBodyAsync(bodyLength, Stream.Null);
                         pending.TryWrite(new ExpectedResponse(request.Method, cacheKey, cached));
                     }

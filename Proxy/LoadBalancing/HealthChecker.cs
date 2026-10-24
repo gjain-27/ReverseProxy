@@ -25,7 +25,7 @@ namespace Proxy.LoadBalancing
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"Health check error: {e.Message}");
+                    Log.Info($"Health check error: {e.Message}");
                 }
 
                 await Task.Delay(_interval);

@@ -23,7 +23,7 @@
             bool wasHealthy = Interlocked.Exchange(ref _isHealthy, true);
             if (!wasHealthy)
             {
-                Console.WriteLine($"{this} is UP");
+                Log.Info($"{this} is UP");
             }
         }
         public void MarkUnhealthy()
@@ -31,7 +31,7 @@
             bool wasHealthy = Interlocked.Exchange(ref _isHealthy, false);
             if (wasHealthy)
             {
-                Console.WriteLine($"{this} is DOWN");
+                Log.Info($"{this} is DOWN");
             }
         }
 

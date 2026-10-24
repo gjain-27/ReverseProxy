@@ -46,7 +46,7 @@ namespace Proxy.RateLimiting
                     RemoveIdle(idleTime);
                 } catch (Exception e)
                 {
-                    Console.WriteLine($"Rate limiter cleanup error: {e.Message}");
+                    Log.Info($"Rate limiter cleanup error: {e.Message}");
                 }
 
                 await Task.Delay(interval);

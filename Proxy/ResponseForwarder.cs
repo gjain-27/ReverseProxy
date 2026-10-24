@@ -32,7 +32,7 @@ namespace Proxy
 
                     await client.WriteAsync(AddHeaders(headText, "X-Cache: MISS"));
 
-                    Console.WriteLine($"Response: {response.StatusCode} {response.Reason}");
+                    Log.Request($"Response: {response.StatusCode} {response.Reason}");
 
                     if (response.StatusCode == 101)
                     {
@@ -60,7 +60,7 @@ namespace Proxy
                         if (!capture.Overflowed)
                         {
                             cache.Set(item.CacheKey!, new CachedResponse(headText, capture.CapturedBytes, time.GetTimestamp(), ttl.Value));
-                            Console.WriteLine($"Cached {item.CacheKey} for {ttl.Value.TotalSeconds}s");
+                            Log.Request($"Cached {item.CacheKey} for {ttl.Value.TotalSeconds}s");
                         }
                     }
                     else

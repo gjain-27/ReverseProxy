@@ -8,6 +8,7 @@
             Console.Title = $"TestBackend {port}";
 
             var builder = WebApplication.CreateBuilder();
+            builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
             var app = builder.Build();
 
             app.MapGet("/", () => $"Hello from backend on port {port}");
@@ -24,6 +25,12 @@
             {
                 response.Headers.CacheControl = "no-store";
                 return DateTime.Now.ToString("HH:mm:ss.fff");
+            });
+
+            app.MapGet("/bench", (HttpResponse response) =>
+            {
+                response.Headers.CacheControl = "public, max-age=60";
+                return "ok";
             });
 
             app.MapPost("/echo", async (HttpRequest request) =>
