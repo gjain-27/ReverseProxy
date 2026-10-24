@@ -5,7 +5,12 @@
         static void Main(string[] args)
         {
             int port = args.Length > 0 ? int.Parse(args[0]) : 5000;
-            Console.Title = $"TestBackend {port}";
+            if (OperatingSystem.IsWindows())
+            {
+                Console.Title = $"TestBackend {port}";
+            }
+
+            string bindAddress = Environment.GetEnvironmentVariable("BACKEND_BIND_ADDRESS") ?? "localhost";
 
             var builder = WebApplication.CreateBuilder();
             builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
@@ -39,7 +44,7 @@
                 return await reader.ReadToEndAsync();
             });
 
-            app.Run($"http://localhost:{port}");
+            app.Run($"http://{bindAddress}:{port}");
         }
     }
 }
