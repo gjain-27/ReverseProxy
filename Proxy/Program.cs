@@ -1,4 +1,5 @@
-﻿using Proxy.LoadBalancing;
+﻿using Proxy.Caching;
+using Proxy.LoadBalancing;
 using Proxy.RateLimiting;
 using System.Security.Cryptography.X509Certificates;
 
@@ -20,7 +21,8 @@ namespace Proxy
             List<Backend> backends = [new Backend("localhost", 5001), new Backend("localhost", 5002), new Backend("localhost", 5003)];
             LeastConnectionsBalancer balancer = new LeastConnectionsBalancer(backends);
             RateLimiter rateLimiter = new RateLimiter(10, 5, TimeProvider.System);
-            TcpProxy httpProxy = new TcpProxy(8080, balancer, rateLimiter);
+            LruCache cache = new LruCache(10 * 1024 * 1024, TimeProvider.System);
+            TcpProxy httpProxy = new TcpProxy(8080, balancer, rateLimiter, cache);
 
             HealthChecker checker = new HealthChecker(backends, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(2));
             _ = checker.RunAsync();
@@ -29,7 +31,7 @@ namespace Proxy
             if (!string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(certPassword) && File.Exists(certPath))
             {
                 X509Certificate2 certificate = X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
-                TcpProxy httpsProxy = new TcpProxy(8443, balancer, rateLimiter, certificate);
+                TcpProxy httpsProxy = new TcpProxy(8443, balancer, rateLimiter, cache, certificate);
 
                 await Task.WhenAll(httpProxy.StartAsync(), httpsProxy.StartAsync());
             }

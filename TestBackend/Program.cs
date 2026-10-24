@@ -12,8 +12,19 @@
 
             app.MapGet("/", () => $"Hello from backend on port {port}");
 
-            app.MapGet("/headers", (HttpRequest request) =>
-                $"X-Forwarded-For: {request.Headers["X-Forwarded-For"]}\nX-Forwarded-Proto: {request.Headers["X-Forwarded-Proto"]}\n");
+            app.MapGet("/headers", (HttpRequest request) => $"X-Forwarded-For: {request.Headers["X-Forwarded-For"]}\nX-Forwarded-Proto: {request.Headers["X-Forwarded-Proto"]}\n");
+
+            app.MapGet("/time", (HttpResponse response) =>
+            {
+                response.Headers.CacheControl = "public, max-age=10";
+                return DateTime.Now.ToString("HH:mm:ss.fff");
+            });
+
+            app.MapGet("/private", (HttpResponse response) =>
+            {
+                response.Headers.CacheControl = "no-store";
+                return DateTime.Now.ToString("HH:mm:ss.fff");
+            });
 
             app.MapPost("/echo", async (HttpRequest request) =>
             {

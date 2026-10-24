@@ -1,4 +1,5 @@
-﻿using Proxy.LoadBalancing;
+﻿using Proxy.Caching;
+using Proxy.LoadBalancing;
 using Proxy.RateLimiting;
 using System.Net;
 using System.Net.Security;
@@ -14,17 +15,19 @@ namespace Proxy
         private readonly int _listenPort;
         private readonly ILoadBalancer _balancer;
         private readonly RateLimiter _rateLimiter;
+        private readonly LruCache _cache;
         private readonly X509Certificate2? _certificate;
 
         private const int MaxConnectAttempts = 3;
         private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(2);
         private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(10);
 
-        public TcpProxy(int listenPort, ILoadBalancer balancer, RateLimiter rateLimiter, X509Certificate2? certificate = null)
+        public TcpProxy(int listenPort, ILoadBalancer balancer, RateLimiter rateLimiter, LruCache cache, X509Certificate2? certificate = null)
         {
             _listenPort = listenPort;
             _balancer = balancer;
             _rateLimiter = rateLimiter;
+            _cache = cache;
             _certificate = certificate;
         }
 
@@ -90,7 +93,7 @@ namespace Proxy
                         HttpReader backendReader = new HttpReader(backendStream, TimeSpan.FromSeconds(60));
 
                         Task requestTask = ForwardRequestsAsync(reader, head.Value, backendStream, clientIp, pending.Writer);
-                        Task responseTask = ResponseForwarder.ForwardAsync(backendReader, pending.Reader, clientStream);
+                        Task responseTask = ResponseForwarder.ForwardAsync(backendReader, pending.Reader, clientStream, _cache, TimeProvider.System);
 
                         Task finished = await Task.WhenAny(requestTask, responseTask);
                         await finished;
@@ -173,10 +176,21 @@ namespace Proxy
                     Console.WriteLine($"Method: {request.Method}, Path: {request.Path}, Version: {request.Version}");
 
                     long bodyLength = HttpParser.GetBodyLength(request);
-                    byte[] forwardedHead = ForwardedHeaders.Rewrite(headText, clientIp, _certificate == null ? "http" : "https");
-                    pending.TryWrite(new ExpectedResponse(request.Method));
-                    await backendStream.WriteAsync(forwardedHead);
-                    await reader.CopyBodyAsync(bodyLength, backendStream);
+                    string? cacheKey = CachePolicy.GetCacheKey(request);
+
+                    if (cacheKey != null && _cache.TryGet(cacheKey, out CachedResponse? cached))
+                    {
+                        Console.WriteLine($"Cache HIT {cacheKey}");
+                        await reader.CopyBodyAsync(bodyLength, Stream.Null);
+                        pending.TryWrite(new ExpectedResponse(request.Method, cacheKey, cached));
+                    }
+                    else
+                    {
+                        byte[] forwardedHead = ForwardedHeaders.Rewrite(headText, clientIp, _certificate == null ? "http" : "https");
+                        pending.TryWrite(new ExpectedResponse(request.Method, cacheKey));
+                        await backendStream.WriteAsync(forwardedHead);
+                        await reader.CopyBodyAsync(bodyLength, backendStream);
+                    }
 
                     head = await reader.ReadHeadAsync();
 
