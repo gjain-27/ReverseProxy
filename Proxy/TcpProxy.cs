@@ -42,6 +42,7 @@ namespace Proxy
             while (true)
             {
                 TcpClient client = await listener.AcceptTcpClientAsync();
+                client.NoDelay = true;
                 _ = HandleClientAsync(client);
             }
         }
@@ -145,6 +146,7 @@ namespace Proxy
                 }
 
                 TcpClient client = new TcpClient();
+                client.NoDelay = true;
                 try
                 {
                     using CancellationTokenSource timeout = new CancellationTokenSource(ConnectTimeout);
