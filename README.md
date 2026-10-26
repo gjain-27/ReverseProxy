@@ -104,8 +104,6 @@ Deployed on **Microsoft Azure** across 3 Ubuntu 24.04 VMs in a private virtual n
 | `rp-loadgen` | Standard_D2s_v4 | Load generator (bombardier) |
 | `rp-backend` | Standard_D2ds_v4 | 2 ASP.NET Core (Kestrel) backend services |
 
-The proxy and backends were published as self-contained `linux-x64` builds and run as `systemd` services. Network security groups restrict SSH and HTTP access to a single IP, and the private VMs are reached through the proxy as a jump host.
-
 ## Benchmarks
 
 Measured on Azure with [bombardier](https://github.com/codesenberg/bombardier) (100 connections, 30 seconds):
